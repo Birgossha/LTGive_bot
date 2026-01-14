@@ -111,12 +111,14 @@ def all_done(t1, t2, t3) -> bool:
 def task_keyboard(t1: int, t2: int, t3: int) -> InlineKeyboardMarkup:
     def label(n, done):
         return f"Task {n} ✅" if done else f"Task {n}"
+
     kb = [
-        [InlineKeyboardButton(label(1, t1), callback_data="task:1")],
-        [InlineKeyboardButton(label(2, t2), callback_data="task:2")],
-        [InlineKeyboardButton(label(3, t3), callback_data="task:3")],
+        [InlineKeyboardButton(label(1, t1), url=TASK1_URL)],
+        [InlineKeyboardButton(label(2, t2), url=TASK2_URL)],
+        [InlineKeyboardButton(label(3, t3), url=TASK3_URL)],
     ]
     return InlineKeyboardMarkup(kb)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
