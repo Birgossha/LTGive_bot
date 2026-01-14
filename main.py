@@ -15,6 +15,10 @@ from telegram.ext import (
 TZ = ZoneInfo("Europe/Berlin")  # MEZ/MESZ automatisch
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+TASK1_URL = os.getenv("TASK1_URL")
+TASK2_URL = os.getenv("TASK2_URL")
+TASK3_URL = os.getenv("TASK3_URL")
+
 
 WELCOME_TEXT = "Hello,\nClick and solve all of them to get the code."
 
