@@ -8,24 +8,26 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
-    CallbackQueryHandler,
     ContextTypes,
 )
 
 TZ = ZoneInfo("Europe/Berlin")  # MEZ/MESZ automatisch
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
 TASK1_URL = os.getenv("TASK1_URL")
 TASK2_URL = os.getenv("TASK2_URL")
 TASK3_URL = os.getenv("TASK3_URL")
 
-
 WELCOME_TEXT = "Hello,\nClick and solve all of them to get the code."
 
+
+# --- DB helpers ---
 def db():
     con = sqlite3.connect(DB_PATH)
     con.execute("PRAGMA journal_mode=WAL;")
     return con
+
 
 def init_db():
     con = db()
@@ -50,11 +52,14 @@ def init_db():
     con.commit()
     con.close()
 
+
 def today_str() -> str:
     return datetime.now(TZ).date().isoformat()
 
+
 def generate_code() -> str:
     return f"{secrets.randbelow(10**8):08d}"  # 8-stellig
+
 
 def get_or_create_daily_code(day: str) -> str:
     con = db()
@@ -70,6 +75,7 @@ def get_or_create_daily_code(day: str) -> str:
     con.commit()
     con.close()
     return code
+
 
 def get_progress(user_id: int, day: str):
     con = db()
@@ -88,7 +94,8 @@ def get_progress(user_id: int, day: str):
         con.commit()
         row = (0, 0, 0, 0)
     con.close()
-    return row
+    return row  # (t1,t2,t3,sent)
+
 
 def set_task_done(user_id: int, day: str, task_num: int):
     con = db()
@@ -102,6 +109,7 @@ def set_task_done(user_id: int, day: str, task_num: int):
     con.commit()
     con.close()
 
+
 def mark_sent(user_id: int, day: str):
     con = db()
     cur = con.cursor()
@@ -109,12 +117,20 @@ def mark_sent(user_id: int, day: str):
     con.commit()
     con.close()
 
+
 def all_done(t1, t2, t3) -> bool:
     return t1 == 1 and t2 == 1 and t3 == 1
 
+
+# --- UI helpers ---
 def task_keyboard(t1: int, t2: int, t3: int) -> InlineKeyboardMarkup:
     def label(n, done):
         return f"Task {n} ✅" if done else f"Task {n}"
+
+    # Safety: if URLs are missing, show disabled info
+    if not TASK1_URL or not TASK2_URL or not TASK3_URL:
+        kb = [[InlineKeyboardButton("❌ TASK URLs missing (set in Railway Variables)", url="https://t.me/BotFather")]]
+        return InlineKeyboardMarkup(kb)
 
     kb = [
         [InlineKeyboardButton(label(1, t1), url=TASK1_URL)],
@@ -124,41 +140,39 @@ def task_keyboard(t1: int, t2: int, t3: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(kb)
 
 
+# --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     day = today_str()
-    get_or_create_daily_code(day)
-    t1, t2, t3, _sent = get_progress(user_id, day)
+
+    # Tagescode sicherstellen
+    code = get_or_create_daily_code(day)
+
+    # Rückkehr von der Task-Seite: /start done1|done2|done3
+    if context.args:
+        arg = context.args[0].lower()
+        if arg in ("done1", "done2", "done3"):
+            task_num = int(arg[-1])
+            set_task_done(user_id, day, task_num)
+
+    t1, t2, t3, sent = get_progress(user_id, day)
 
     await update.message.reply_text(
         WELCOME_TEXT,
         reply_markup=task_keyboard(t1, t2, t3)
     )
 
-async def on_task_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    day = today_str()
-    code = get_or_create_daily_code(day)
-
-    task_num = int(query.data.split(":")[1])
-    set_task_done(user_id, day, task_num)
-
-    t1, t2, t3, sent = get_progress(user_id, day)
-
-    # Buttons aktualisieren (✅)
-    await query.edit_message_reply_markup(reply_markup=task_keyboard(t1, t2, t3))
-
     # Wenn alle 3 erledigt und Code noch nicht gesendet → senden
     if all_done(t1, t2, t3) and sent == 0:
         mark_sent(user_id, day)
-        await query.message.reply_text(f"✅ Your code for today: `{code}`", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Your code for today: `{code}`", parse_mode="Markdown")
 
+
+# --- Daily job (00:00 local time) ---
 async def daily_midnight_job(context: ContextTypes.DEFAULT_TYPE):
-    # erzeugt den neuen Code für den neuen Tag
+    # erzeugt den neuen Code für den neuen Tag (wird beim ersten Zugriff genutzt)
     get_or_create_daily_code(today_str())
+
 
 def main():
     if not BOT_TOKEN:
@@ -169,7 +183,6 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(on_task_click, pattern=r"^task:\d$"))
 
     # täglich 00:00 (Europe/Berlin)
     app.job_queue.run_daily(
@@ -184,6 +197,6 @@ def main():
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
+
 if __name__ == "__main__":
     main()
-44
